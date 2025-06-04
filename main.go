@@ -49,12 +49,11 @@ func handlerLogin(s *state, cmd command) error {
 		return fmt.Errorf("the login handler expects a single argument, the username.")
 	}
 
-	user, err := s.queries.GetUser(context.Background(), sql.NullString{ String: cmd.args[0], Valid: true })
+	user, err := s.queries.GetUser(context.Background(), sql.NullString{String: cmd.args[0], Valid: true})
 	if err != nil {
 		fmt.Println("user does not exist")
 		return err
 	}
-
 
 	s.conf.SetUser(user.Name.String)
 	fmt.Printf("User set to %s\n", user.Name.String)
@@ -113,6 +112,37 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
+func resetHandler(s *state, cmd command) error {
+	err := s.queries.DeleteAllUsers(context.Background())
+	if err != nil {
+		fmt.Println("could not reset users: ", err.Error())
+		return err
+	}
+
+	fmt.Println("All users have been deleted successfully.")
+	return nil
+}
+
+func handleUsers(s *state, cmd command) error {
+	users, err := s.queries.GetAllUsers(context.Background())
+	if err != nil {
+		fmt.Println("could not fetch users: ", err.Error())
+		return err
+	}
+
+	var currUser = s.conf.CurrentUsername
+	for _, user := range users {
+		if (user.Name.String == currUser) {
+			fmt.Printf(" * %s (current)\n", user.Name.String)
+			continue
+		}
+
+		fmt.Printf(" * %s\n", user.Name.String)
+	}
+
+	return nil
+}
+
 func main() {
 	conf := config.Read()
 	db, err := sql.Open("postgres", conf.DBUrl)
@@ -135,12 +165,10 @@ func main() {
 
 	allCommands.register("login", handlerLogin)
 	allCommands.register("register", handlerRegister)
+	allCommands.register("reset", resetHandler)
+	allCommands.register("users", handleUsers)
 
 	args := os.Args[1:]
-	if len(args) < 2 {
-		os.Exit(1)
-	}
-
 	cmd := &command{
 		name: args[0],
 		args: args[1:],
