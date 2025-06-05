@@ -9,11 +9,12 @@ import (
 
 	"github.com/charankamal20/gator/internal/config"
 	"github.com/charankamal20/gator/internal/database"
+	"github.com/charankamal20/gator/internal/pkg/rss"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
 
-type state struct {
+type State struct {
 	db      *sql.DB
 	queries *database.Queries
 	conf    *config.Config
@@ -25,10 +26,10 @@ type command struct {
 }
 
 type commands struct {
-	dict map[string]func(*state, command) error
+	dict map[string]func(*State, command) error
 }
 
-func (c *commands) run(s *state, cmd command) error {
+func (c *commands) run(s *State, cmd command) error {
 	if handler, exists := c.dict[cmd.name]; exists {
 		return handler(s, cmd)
 	}
@@ -36,15 +37,15 @@ func (c *commands) run(s *state, cmd command) error {
 	return fmt.Errorf("unknown command: %s", cmd.name)
 }
 
-func (c *commands) register(name string, handler func(*state, command) error) {
+func (c *commands) register(name string, handler func(*State, command) error) {
 	if c.dict == nil {
-		c.dict = make(map[string]func(*state, command) error)
+		c.dict = make(map[string]func(*State, command) error)
 	}
 
 	c.dict[name] = handler
 }
 
-func handlerLogin(s *state, cmd command) error {
+func handlerLogin(s *State, cmd command) error {
 	if len(cmd.args) < 1 {
 		return fmt.Errorf("the login handler expects a single argument, the username.")
 	}
@@ -61,7 +62,7 @@ func handlerLogin(s *state, cmd command) error {
 	return nil
 }
 
-func handlerRegister(s *state, cmd command) error {
+func handlerRegister(s *State, cmd command) error {
 	if len(cmd.args) < 1 {
 		return fmt.Errorf("the login handler expects a single argument, the username.")
 	}
@@ -112,7 +113,7 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
-func resetHandler(s *state, cmd command) error {
+func resetHandler(s *State, cmd command) error {
 	err := s.queries.DeleteAllUsers(context.Background())
 	if err != nil {
 		fmt.Println("could not reset users: ", err.Error())
@@ -123,7 +124,7 @@ func resetHandler(s *state, cmd command) error {
 	return nil
 }
 
-func handleUsers(s *state, cmd command) error {
+func handleUsers(s *State, cmd command) error {
 	users, err := s.queries.GetAllUsers(context.Background())
 	if err != nil {
 		fmt.Println("could not fetch users: ", err.Error())
@@ -143,6 +144,27 @@ func handleUsers(s *state, cmd command) error {
 	return nil
 }
 
+func handleAgg(s *State, cmd command) error {
+
+	data, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		fmt.Println(err.Error())
+		return err
+	}
+
+	fmt.Println("Title: ", data.Channel.Title)
+	fmt.Println("Description: ", data.Channel.Description)
+	for _, item := range data.Channel.Item {
+		fmt.Println("Item Title: ", item.Title)
+		fmt.Println("Item Link: ", item.Link)
+		fmt.Println("Item Description: ", item.Description)
+		fmt.Println("Item PubDate: ", item.PubDate)
+		fmt.Println("--------------------------------------------------")
+	}
+
+	return nil
+}
+
 func main() {
 	conf := config.Read()
 	db, err := sql.Open("postgres", conf.DBUrl)
@@ -153,20 +175,21 @@ func main() {
 
 	queries := database.New(db)
 
-	currState := &state{
+	currState := &State{
 		conf:    &conf,
 		db:      db,
 		queries: queries,
 	}
 
 	allCommands := &commands{
-		dict: make(map[string]func(*state, command) error, 0),
+		dict: make(map[string]func(*State, command) error, 0),
 	}
 
 	allCommands.register("login", handlerLogin)
 	allCommands.register("register", handlerRegister)
 	allCommands.register("reset", resetHandler)
 	allCommands.register("users", handleUsers)
+	allCommands.register("agg", handleAgg)
 
 	args := os.Args[1:]
 	cmd := &command{

@@ -1,0 +1,24 @@
+.
+├── Makefile
+├── bin
+│   └── gator
+├── dirstructure.txt
+├── go.mod
+├── go.sum
+├── internal
+│   ├── config
+│   │   └── config.go
+│   ├── database
+│   │   ├── db.go
+│   │   ├── models.go
+│   │   └── users.sql.go
+│   └── pkg
+├── main.go
+├── sql
+│   ├── queries
+│   │   └── users.sql
+│   └── schema
+│       └── 001_users.sql
+└── sqlc.yaml
+
+9 directories, 13 files
