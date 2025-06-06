@@ -22,7 +22,7 @@ RETURNING id, created_at, updated_at, name
 `
 
 type CreateUserParams struct {
-	ID        sql.NullString
+	ID        string
 	CreatedAt sql.NullTime
 	UpdatedAt sql.NullTime
 	Name      sql.NullString

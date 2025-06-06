@@ -68,10 +68,7 @@ func handlerRegister(s *State, cmd command) error {
 	}
 
 	newuser := &database.CreateUserParams{
-		ID: sql.NullString{
-			Valid:  true,
-			String: uuid.New().String(),
-		},
+		ID: uuid.New().String(),
 		Name: sql.NullString{
 			Valid:  true,
 			String: cmd.args[0],
@@ -105,7 +102,7 @@ func handlerRegister(s *State, cmd command) error {
 	s.conf.SetUser(newuser.Name.String)
 
 	fmt.Println("User was created successfully.")
-	fmt.Println("ID: ", newuser.ID.String)
+	fmt.Println("ID: ", newuser.ID)
 	fmt.Println("Name: ", newuser.Name.String)
 	fmt.Println("Created at: ", newuser.CreatedAt.Time.String())
 	fmt.Println("Updated at: ", newuser.UpdatedAt.Time.String())
@@ -133,7 +130,7 @@ func handleUsers(s *State, cmd command) error {
 
 	var currUser = s.conf.CurrentUsername
 	for _, user := range users {
-		if (user.Name.String == currUser) {
+		if user.Name.String == currUser {
 			fmt.Printf(" * %s (current)\n", user.Name.String)
 			continue
 		}
@@ -182,7 +179,7 @@ func handleAddFeed(s *State, cmd command) error {
 		ID:     uuid.New().String(),
 		Name:   feedName,
 		Url:    feedURL,
-		UserID: user.ID.String,
+		UserID: user.ID,
 	}
 
 	newFeed, err := s.queries.CreateFeed(context.Background(), *feed)
@@ -198,6 +195,25 @@ func handleAddFeed(s *State, cmd command) error {
 	fmt.Println("User ID: ", newFeed.UserID)
 	fmt.Println("CreatedAt: ", newFeed.CreatedAt.String())
 	fmt.Println("UpdatedAt: ", newFeed.UpdatedAt.String())
+
+	return nil
+}
+
+func handleFeeds(s *State, cmd command) error {
+	feeds, err := s.queries.GetAllFeeds(context.Background())
+	if err != nil {
+		return err
+	}
+
+	if len(feeds) == 0 {
+		fmt.Println("No feeds found.")
+		return nil
+	}
+
+	fmt.Println("Feeds:")
+	for _, feed := range feeds {
+		fmt.Printf(" - Name: %s, URL: %s, User: %s\n", feed.Name, feed.Url, feed.Name_2.String)
+	}
 
 	return nil
 }
@@ -228,6 +244,7 @@ func main() {
 	allCommands.register("users", handleUsers)
 	allCommands.register("agg", handleAgg)
 	allCommands.register("addfeed", handleAddFeed)
+	allCommands.register("feeds", handleFeeds)
 
 	args := os.Args[1:]
 	cmd := &command{

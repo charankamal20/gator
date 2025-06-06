@@ -19,7 +19,7 @@ type Feed struct {
 }
 
 type User struct {
-	ID        sql.NullString
+	ID        string
 	CreatedAt sql.NullTime
 	UpdatedAt sql.NullTime
 	Name      sql.NullString
