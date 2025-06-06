@@ -22,3 +22,8 @@ from feeds f
 join users u
 on f.user_id = u.id
 order by f.created_at desc;
+
+-- name: GetFeedByUrl :one
+select f.id, f.name, f.url, f.user_id, f.created_at, f.updated_at
+from feeds f
+where f.url = $1;

@@ -182,9 +182,37 @@ func handleAddFeed(s *State, cmd command) error {
 		UserID: user.ID,
 	}
 
-	newFeed, err := s.queries.CreateFeed(context.Background(), *feed)
+	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+		ReadOnly:  false,
+	})
 	if err != nil {
+		return err
+	}
+
+	dbconn := s.queries.WithTx(tx)
+	newFeed, err := dbconn.CreateFeed(context.Background(), *feed)
+	if err != nil {
+		tx.Rollback()
 		fmt.Println("could not add feed: ", err.Error())
+		return err
+	}
+
+	follow := &database.CreateFeedFollowParams{
+		ID:     uuid.New().String(),
+		UserID: user.ID,
+		FeedID: feed.ID,
+	}
+
+	_, err = dbconn.CreateFeedFollow(context.Background(), *follow)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println("could not follow feed: ", err.Error())
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		fmt.Println("could not commit transaction: ", err.Error())
 		return err
 	}
 
@@ -218,6 +246,72 @@ func handleFeeds(s *State, cmd command) error {
 	return nil
 }
 
+func handleFollow(s *State, cmd command) error {
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("the follow handler expects a single argument, the url.")
+	}
+
+	user, err := s.queries.GetUser(context.Background(), sql.NullString{String: s.conf.CurrentUsername, Valid: true})
+	if err != nil {
+		return err
+	}
+
+	url := cmd.args[0]
+	if url == "" {
+		return fmt.Errorf("feed URL cannot be empty")
+	}
+
+	feed, err := s.queries.GetFeedByUrl(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	follow := &database.CreateFeedFollowParams{
+		ID:     uuid.New().String(),
+		UserID: user.ID,
+		FeedID: feed.ID,
+	}
+
+	newFollow, err := s.queries.CreateFeedFollow(context.Background(), *follow)
+	if err != nil {
+		fmt.Println("could not follow feed: ", err.Error())
+		return err
+	}
+
+	fmt.Println("Feed followed successfully:")
+	fmt.Printf("ID: %s\n", newFollow.ID)
+	fmt.Printf("User Name: %s\n", newFollow.UserName.String)
+	fmt.Printf("Feed Name: %s\n", newFollow.FeedName)
+	fmt.Println("CreatedAt: ", newFollow.CreatedAt.String())
+
+	return nil
+}
+
+func handleFollowing(s *State, cmd command) error {
+	user, err := s.queries.GetUser(context.Background(), sql.NullString{String: s.conf.CurrentUsername, Valid: true})
+	if err != nil {
+		return err
+	}
+
+	following, err := s.queries.GetFeedFollowsForUser(context.Background(), user.ID)
+	if err != nil {
+		fmt.Println("could not fetch following feeds: ", err.Error())
+		return err
+	}
+
+	if len(following) == 0 {
+		fmt.Println("You are not following any feeds.")
+		return nil
+	}
+
+	fmt.Println("Following Feeds:")
+	for _, follow := range following {
+		fmt.Printf(" - %s\n", follow.FeedName)
+	}
+
+	return nil
+}
+
 func main() {
 	conf := config.Read()
 	db, err := sql.Open("postgres", conf.DBUrl)
@@ -225,6 +319,8 @@ func main() {
 		fmt.Println("could not connect to db: ", err.Error())
 		os.Exit(1)
 	}
+
+	defer db.Close()
 
 	queries := database.New(db)
 
@@ -245,6 +341,8 @@ func main() {
 	allCommands.register("agg", handleAgg)
 	allCommands.register("addfeed", handleAddFeed)
 	allCommands.register("feeds", handleFeeds)
+	allCommands.register("follow", handleFollow)
+	allCommands.register("following", handleFollowing)
 
 	args := os.Args[1:]
 	cmd := &command{
