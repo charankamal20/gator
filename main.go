@@ -165,6 +165,43 @@ func handleAgg(s *State, cmd command) error {
 	return nil
 }
 
+func handleAddFeed(s *State, cmd command) error {
+	if len(cmd.args) < 2 {
+		return fmt.Errorf("the addfeed handler expects two arguments, the feed URL and name.")
+	}
+
+	user, err := s.queries.GetUser(context.Background(), sql.NullString{String: s.conf.CurrentUsername, Valid: true})
+	if err != nil {
+		return err
+	}
+
+	feedURL := cmd.args[1]
+	feedName := cmd.args[0]
+
+	feed := &database.CreateFeedParams{
+		ID:     uuid.New().String(),
+		Name:   feedName,
+		Url:    feedURL,
+		UserID: user.ID.String,
+	}
+
+	newFeed, err := s.queries.CreateFeed(context.Background(), *feed)
+	if err != nil {
+		fmt.Println("could not add feed: ", err.Error())
+		return err
+	}
+
+	fmt.Println("Feed added successfully:")
+	fmt.Printf("ID: %s\n", newFeed.ID)
+	fmt.Printf("Name: %s\n", newFeed.Name)
+	fmt.Printf("URL: %s\n", newFeed.Url)
+	fmt.Println("User ID: ", newFeed.UserID)
+	fmt.Println("CreatedAt: ", newFeed.CreatedAt.String())
+	fmt.Println("UpdatedAt: ", newFeed.UpdatedAt.String())
+
+	return nil
+}
+
 func main() {
 	conf := config.Read()
 	db, err := sql.Open("postgres", conf.DBUrl)
@@ -190,6 +227,7 @@ func main() {
 	allCommands.register("reset", resetHandler)
 	allCommands.register("users", handleUsers)
 	allCommands.register("agg", handleAgg)
+	allCommands.register("addfeed", handleAddFeed)
 
 	args := os.Args[1:]
 	cmd := &command{
