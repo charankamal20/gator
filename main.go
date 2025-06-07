@@ -45,6 +45,21 @@ func (c *commands) register(name string, handler func(*State, command) error) {
 	c.dict[name] = handler
 }
 
+func middlewareLoggedIn(handler func(s *State, cmd command, user database.User) error) func(*State, command) error {
+	return func(s *State, cmd command) error {
+		if s.conf.CurrentUsername == "" {
+			return fmt.Errorf("you must be logged in to perform this action")
+		}
+
+		user, err := s.queries.GetUser(context.Background(), sql.NullString{String: s.conf.CurrentUsername, Valid: true})
+		if err != nil {
+			return fmt.Errorf("could not fetch user: %v", err)
+		}
+
+		return handler(s, cmd, user)
+	}
+}
+
 func handlerLogin(s *State, cmd command) error {
 	if len(cmd.args) < 1 {
 		return fmt.Errorf("the login handler expects a single argument, the username.")
@@ -162,14 +177,9 @@ func handleAgg(s *State, cmd command) error {
 	return nil
 }
 
-func handleAddFeed(s *State, cmd command) error {
+func handleAddFeed(s *State, cmd command, user database.User) error {
 	if len(cmd.args) < 2 {
 		return fmt.Errorf("the addfeed handler expects two arguments, the feed URL and name.")
-	}
-
-	user, err := s.queries.GetUser(context.Background(), sql.NullString{String: s.conf.CurrentUsername, Valid: true})
-	if err != nil {
-		return err
 	}
 
 	feedURL := cmd.args[1]
@@ -246,14 +256,9 @@ func handleFeeds(s *State, cmd command) error {
 	return nil
 }
 
-func handleFollow(s *State, cmd command) error {
+func handleFollow(s *State, cmd command, user database.User) error {
 	if len(cmd.args) < 1 {
 		return fmt.Errorf("the follow handler expects a single argument, the url.")
-	}
-
-	user, err := s.queries.GetUser(context.Background(), sql.NullString{String: s.conf.CurrentUsername, Valid: true})
-	if err != nil {
-		return err
 	}
 
 	url := cmd.args[0]
@@ -287,11 +292,7 @@ func handleFollow(s *State, cmd command) error {
 	return nil
 }
 
-func handleFollowing(s *State, cmd command) error {
-	user, err := s.queries.GetUser(context.Background(), sql.NullString{String: s.conf.CurrentUsername, Valid: true})
-	if err != nil {
-		return err
-	}
+func handleFollowing(s *State, cmd command, user database.User) error {
 
 	following, err := s.queries.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
@@ -309,6 +310,31 @@ func handleFollowing(s *State, cmd command) error {
 		fmt.Printf(" - %s\n", follow.FeedName)
 	}
 
+	return nil
+}
+
+func handleDelete(s *State, cmd command, user database.User) error {
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("the delete handler expects a single argument, the feed URL.")
+	}
+
+	url := cmd.args[0]
+	if url == "" {
+		return fmt.Errorf("feed URL cannot be empty")
+	}
+
+	deleteArgs := &database.DeleteFeedFollowParams{
+		Url: url,
+		UserID: user.ID,
+	}
+
+	err := s.queries.DeleteFeedFollow(context.Background(), *deleteArgs)
+	if err != nil {
+		fmt.Println("could not delete feed: ", err.Error())
+		return err
+	}
+
+	fmt.Printf("Feed with URL %s deleted successfully.\n", url)
 	return nil
 }
 
@@ -339,10 +365,11 @@ func main() {
 	allCommands.register("reset", resetHandler)
 	allCommands.register("users", handleUsers)
 	allCommands.register("agg", handleAgg)
-	allCommands.register("addfeed", handleAddFeed)
 	allCommands.register("feeds", handleFeeds)
-	allCommands.register("follow", handleFollow)
-	allCommands.register("following", handleFollowing)
+	allCommands.register("addfeed", middlewareLoggedIn(handleAddFeed))
+	allCommands.register("follow", middlewareLoggedIn(handleFollow))
+	allCommands.register("following", middlewareLoggedIn(handleFollowing))
+	allCommands.register("unfollow", middlewareLoggedIn(handleDelete))
 
 	args := os.Args[1:]
 	cmd := &command{
