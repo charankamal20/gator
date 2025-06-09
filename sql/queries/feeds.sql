@@ -27,3 +27,16 @@ order by f.created_at desc;
 select f.id, f.name, f.url, f.user_id, f.created_at, f.updated_at
 from feeds f
 where f.url = $1;
+
+-- name: MarkFeedFetched :exec
+update feeds
+set
+updated_at = now(),
+last_fetched_at = now()
+where id = $1;
+
+-- name: GetNextFeedtoFetch :one
+select *
+from feeds
+order by last_fetched_at ASC NULLS FIRST
+limit 1;

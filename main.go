@@ -158,23 +158,42 @@ func handleUsers(s *State, cmd command) error {
 
 func handleAgg(s *State, cmd command) error {
 
-	data, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if len(cmd.args) < 1 {
+		return fmt.Errorf("the agg handler expects a single argument, the time between requests in seconds.")
+	}
+
+	timereqs, err := time.ParseDuration(cmd.args[0])
 	if err != nil {
-		fmt.Println(err.Error())
+		fmt.Println("could not parse time: ", err.Error())
 		return err
 	}
 
-	fmt.Println("Title: ", data.Channel.Title)
-	fmt.Println("Description: ", data.Channel.Description)
-	for _, item := range data.Channel.Item {
-		fmt.Println("Item Title: ", item.Title)
-		fmt.Println("Item Link: ", item.Link)
-		fmt.Println("Item Description: ", item.Description)
-		fmt.Println("Item PubDate: ", item.PubDate)
-		fmt.Println("--------------------------------------------------")
+	fmt.Println("Collecting feeds every ", timereqs.String())
+
+	ticker := time.NewTicker(timereqs)
+
+	defer ticker.Stop()
+	for ;; <-ticker.C {
+		scrapeFeeds(s)
 	}
 
-	return nil
+	// data, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	// if err != nil {
+	// 	fmt.Println(err.Error())
+	// 	return err
+	// }
+
+	// fmt.Println("Title: ", data.Channel.Title)
+	// fmt.Println("Description: ", data.Channel.Description)
+	// for _, item := range data.Channel.Item {
+	// 	fmt.Println("Item Title: ", item.Title)
+	// 	fmt.Println("Item Link: ", item.Link)
+	// 	fmt.Println("Item Description: ", item.Description)
+	// 	fmt.Println("Item PubDate: ", item.PubDate)
+	// 	fmt.Println("--------------------------------------------------")
+	// }
+
+	// return nil
 }
 
 func handleAddFeed(s *State, cmd command, user database.User) error {
@@ -335,6 +354,30 @@ func handleDelete(s *State, cmd command, user database.User) error {
 	}
 
 	fmt.Printf("Feed with URL %s deleted successfully.\n", url)
+	return nil
+}
+
+func scrapeFeeds(s *State) error {
+	feed, err := s.queries.GetNextFeedtoFetch(context.Background())
+	if err != nil {
+		return err
+	}
+
+	err = s.queries.MarkFeedFetched(context.Background(), feed.ID)
+	if err != nil {
+		return err
+	}
+
+	data, err := rss.FetchFeed(context.Background(), feed.Url)
+	if err != nil {
+		fmt.Println("could not fetch feed: ", err.Error())
+		return err
+	}
+
+	for _, item := range data.Channel.Item {
+		fmt.Println("Item Title: ", item.Title)
+	}
+
 	return nil
 }
 
