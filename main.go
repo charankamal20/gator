@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/charankamal20/gator/internal/config"
@@ -173,7 +174,7 @@ func handleAgg(s *State, cmd command) error {
 	ticker := time.NewTicker(timereqs)
 
 	defer ticker.Stop()
-	for ;; <-ticker.C {
+	for ; ; <-ticker.C {
 		scrapeFeeds(s)
 	}
 
@@ -343,7 +344,7 @@ func handleDelete(s *State, cmd command, user database.User) error {
 	}
 
 	deleteArgs := &database.DeleteFeedFollowParams{
-		Url: url,
+		Url:    url,
 		UserID: user.ID,
 	}
 
@@ -375,7 +376,50 @@ func scrapeFeeds(s *State) error {
 	}
 
 	for _, item := range data.Channel.Item {
-		fmt.Println("Item Title: ", item.Title)
+		fmt.Println("Date: ", item.PubDate)
+		timePublished, err := time.Parse(time.RFC1123Z, item.PubDate)
+
+		post := &database.CreatePostParams{
+			ID:        uuid.New().String(),
+			FeedID:    feed.ID,
+			Title:     item.Title,
+			Url:       item.Link,
+			PublishedAt: timePublished,
+		}
+
+		_, err = s.queries.CreatePost(context.Background(), *post)
+		if err != nil {
+			fmt.Println("could not create post: ", err.Error())
+			return err
+		}
+	}
+
+	return nil
+}
+
+func handleBrowse(s *State, cmd command, user database.User) error {
+	limit_int := 2
+
+	if len(cmd.args) > 0 {
+		limit := cmd.args[0]
+		if limit == "" {
+			limit_int = 2
+		} else {
+			limit_int, _ = strconv.Atoi(limit)
+		}
+	}
+
+	posts, err := s.queries.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+		ID: user.ID,
+		Limit:  int32(limit_int),
+	})
+	if err != nil {
+		fmt.Println("could not fetch posts: ", err.Error())
+		return err
+	}
+
+	for _, post := range posts {
+		fmt.Printf("\n * %s - %s", post.ID, post.Title)
 	}
 
 	return nil
@@ -413,6 +457,8 @@ func main() {
 	allCommands.register("follow", middlewareLoggedIn(handleFollow))
 	allCommands.register("following", middlewareLoggedIn(handleFollowing))
 	allCommands.register("unfollow", middlewareLoggedIn(handleDelete))
+	allCommands.register("browse", middlewareLoggedIn(handleBrowse))
+
 
 	args := os.Args[1:]
 	cmd := &command{
